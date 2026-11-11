@@ -1,0 +1,52 @@
+:root {
+  --bg: #0f1419;
+  --panel: #182028;
+  --border: #263340;
+  --text: #e6edf3;
+  --muted: #8b98a5;
+  --up: #26a69a;
+  --down: #ef5350;
+  --warn: #f0b429;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.page { max-width: 1200px; margin: 0 auto; padding: 24px; }
+.page.error { color: var(--down); }
+
+.header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.header h1 { margin: 0 0 4px; font-size: 1.4rem; }
+.tag { color: var(--muted); font-size: 0.85rem; }
+.symbol-picker { display: flex; gap: 8px; align-items: center; color: var(--muted); }
+.symbol-picker select { background: var(--panel); color: var(--text); border: 1px solid var(--border); padding: 6px 10px; border-radius: 6px; }
+
+.panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+.panel h2 { margin: 0 0 12px; font-size: 1rem; }
+.grid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+@media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+
+.chart { width: 100%; height: auto; }
+.axis { fill: var(--muted); font-size: 11px; }
+.empty { color: var(--muted); padding: 24px; text-align: center; }
+
+.table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.table th, .table td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border); }
+.table th { color: var(--muted); font-weight: 500; }
+.table tbody tr { cursor: pointer; }
+.table tbody tr:hover, .table tr.selected { background: rgba(255, 255, 255, 0.05); }
+.pos { color: var(--up); }
+.muted { color: var(--muted); }
+
+.metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.metric { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+.metric.warn { border-color: var(--warn); }
+.metric-label { color: var(--muted); font-size: 0.75rem; }
+.metric-value { font-size: 1.1rem; font-weight: 600; }

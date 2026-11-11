@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+node_modules/
+data/
+!data/**/.gitkeep
+artifacts/
+!artifacts/**/.gitkeep
+*.parquet
+*.ubj
+*.lgb
+.pytest_cache/
+.mypy_cache/
+frontend/dist/
