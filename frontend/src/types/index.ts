@@ -33,4 +33,33 @@ export interface Dashboard {
   symbols: string[];
   signals: Signal[];
   risk: RiskLimits;
+  /** Optional extras supplied by the live API (absent in mock mode). */
+  accountEquity?: number | null;
+  modelStatus?: string;
+  asOf?: string | null;
+}
+
+/** Body of POST /orders/execute. */
+export interface OrderRequest {
+  symbol: string;
+  side: "buy" | "sell";
+  notional_or_qty: number;
+  unit?: "notional" | "qty";
+}
+
+/** Response of POST /orders/execute. */
+export interface OrderResult {
+  orderId: string;
+  clientOrderId: string;
+  symbol: string;
+  side: string;
+  qty: number;
+  status: string;
+  entryPrice?: number | null;
+  stopPrice?: number | null;
+  takeProfitPrice?: number | null;
+  riskDollars?: number | null;
+  riskPctOfEquity?: number | null;
+  cappedBy: string[];
+  message: string;
 }

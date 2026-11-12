@@ -46,6 +46,7 @@ export default function App() {
             threshold={dashboard.risk.pThreshold}
             selected={symbol}
             onSelect={setSymbol}
+            accountEquity={dashboard.accountEquity}
           />
         </section>
         <section className="panel">

@@ -45,6 +45,12 @@ body {
 .pos { color: var(--up); }
 .muted { color: var(--muted); }
 
+.btn-approve { background: var(--up); color: #04110f; border: 0; border-radius: 6px; padding: 5px 10px; font-size: 0.8rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.btn-approve:hover:not(:disabled) { filter: brightness(1.1); }
+.btn-approve:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; }
+.order-msg { margin-top: 4px; font-size: 0.72rem; max-width: 260px; white-space: normal; }
+.order-err { color: var(--down); }
+
 .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .metric { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
 .metric.warn { border-color: var(--warn); }
