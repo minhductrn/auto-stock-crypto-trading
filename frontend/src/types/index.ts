@@ -38,6 +38,7 @@ export interface BlockedMlEntry {
 
 export interface Dashboard {
   symbols: string[];
+  referenceSymbols?: string[];
   signals: Signal[];
   risk: RiskLimits;
   /** Optional extras supplied by the live API (absent in mock mode). */
@@ -45,6 +46,11 @@ export interface Dashboard {
   modelStatus?: string;
   blockedMlEntries?: BlockedMlEntry[];
   asOf?: string | null;
+  source?: string;
+  dataStatus?: "Current" | "Stale" | "Incomplete";
+  updatedAt?: string;
+  nextSession?: string;
+  staleAfter?: string;
 }
 
 /** Body of POST /orders/execute. */

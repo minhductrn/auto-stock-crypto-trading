@@ -1,0 +1,8 @@
+{
+  "enabled": false,
+  "calendar": "XNYS",
+  "timezone": "America/New_York",
+  "first_fetch_minutes_after_close": 20,
+  "retry_interval_minutes": 10,
+  "stop_retry_minutes_after_close": 60
+}

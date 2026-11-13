@@ -1,10 +1,11 @@
 interface HeaderProps {
   symbols: string[];
   selected: string;
+  referenceSymbols?: string[];
   onSelect: (symbol: string) => void;
 }
 
-export function Header({ symbols, selected, onSelect }: HeaderProps) {
+export function Header({ symbols, selected, onSelect, referenceSymbols = [] }: HeaderProps) {
   return (
     <header className="header">
       <div>
@@ -16,7 +17,7 @@ export function Header({ symbols, selected, onSelect }: HeaderProps) {
         <select value={selected} onChange={(e) => onSelect(e.target.value)}>
           {symbols.map((s) => (
             <option key={s} value={s}>
-              {s}
+              {s === '^GSPC' ? 'S&P 500 (^GSPC)' : s}{referenceSymbols.includes(s) ? ' · Chart only' : ''}
             </option>
           ))}
         </select>

@@ -3,9 +3,15 @@ import { mockCandles, mockDashboard } from "./mock";
 
 /** When VITE_API_URL is unset the UI runs on deterministic mock data. */
 const BASE_URL = import.meta.env.VITE_API_URL;
+const observationMode = new URLSearchParams(window.location.search).get("mode") === "observation";
+let observation: Promise<{ dashboard: Dashboard; candles: Record<string, Candle[]> }> | undefined;
+
+function loadObservation() {
+  return (observation ??= getJson("/observation.json"));
+}
 
 /** True when a live backend is configured (order execution is only offered then). */
-export const isLiveApi = Boolean(BASE_URL);
+export const isLiveApi = Boolean(BASE_URL) && !observationMode;
 
 async function errorDetail(res: Response): Promise<string> {
   try {
@@ -19,7 +25,7 @@ async function errorDetail(res: Response): Promise<string> {
 }
 
 async function getJson<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`);
+  const res = await fetch(`${observationMode ? "" : BASE_URL}${path}`);
   if (!res.ok) {
     throw new Error(`GET ${path} failed: ${await errorDetail(res)}`);
   }
@@ -39,10 +45,12 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
 }
 
 export async function fetchDashboard(): Promise<Dashboard> {
+  if (observationMode) return (await loadObservation()).dashboard;
   return BASE_URL ? getJson<Dashboard>("/dashboard") : mockDashboard;
 }
 
 export async function fetchCandles(symbol: string): Promise<Candle[]> {
+  if (observationMode) return (await loadObservation()).candles[symbol] ?? [];
   return BASE_URL
     ? getJson<Candle[]>(`/candles/${encodeURIComponent(symbol)}`)
     : mockCandles(symbol);
@@ -53,8 +61,8 @@ export async function fetchCandles(symbol: string): Promise<Candle[]> {
  * Requires VITE_API_URL; there is deliberately no mock fallback for order placement.
  */
 export async function executeOrder(req: OrderRequest): Promise<OrderResult> {
-  if (!BASE_URL) {
-    throw new Error("VITE_API_URL is not set; order execution is disabled in mock mode");
+  if (!isLiveApi) {
+    throw new Error("Order execution requires API mode.");
   }
   return postJson<OrderResult>("/orders/execute", req);
 }

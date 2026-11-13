@@ -16,6 +16,7 @@ dependencies = [
     "lightgbm>=4.0",
     "joblib",
     "yfinance",
+    "exchange-calendars",
     "fastapi",
     "uvicorn[standard]",
     "alpaca-py",

@@ -33,7 +33,7 @@ body {
 .grid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
 @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
 
-.chart { width: 100%; height: auto; }
+.chart { width: 100%; height: auto; cursor: crosshair; }
 .axis { fill: var(--muted); font-size: 11px; }
 .empty { color: var(--muted); padding: 24px; text-align: center; }
 
@@ -56,3 +56,13 @@ body {
 .metric.warn { border-color: var(--warn); }
 .metric-label { color: var(--muted); font-size: 0.75rem; }
 .metric-value { font-size: 1.1rem; font-weight: 600; }
+
+.candle-inspector { margin-top: 12px; font-variant-numeric: tabular-nums; }
+.candle-inspector label { font-weight: 600; }
+.candle-inspector input { display: block; width: 100%; margin: 8px 0 2px; accent-color: #68a9f4; }
+.candle-range { display: flex; justify-content: space-between; gap: 12px; font-size: .8rem; }
+.candle-inspector dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(82px, 1fr)); gap: 10px; margin-bottom: 0; }
+.candle-inspector dt { font-size: .8rem; opacity: .78; }
+.candle-inspector dd { margin: 3px 0 0; }
+
+.candle-hint { display: block; margin-top: 4px; opacity: .78; }

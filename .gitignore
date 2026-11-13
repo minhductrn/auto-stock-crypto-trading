@@ -17,3 +17,5 @@ frontend/dist/
 data/
 models/
 artifacts/
+
+/frontend/public/observation.json
