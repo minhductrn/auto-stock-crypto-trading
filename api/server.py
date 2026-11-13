@@ -100,7 +100,7 @@ def load_bars() -> pd.DataFrame:
         df = _bars_cache["df"]
         if df is not None and now - _bars_cache["ts"] < BARS_TTL_SECONDS:
             return df
-        df = read_bars(BARS_DIR)
+        df = read_bars(BARS_DIR).drop_duplicates(subset=["symbol", "session_date"], keep="last")
         df["symbol"] = df["symbol"].astype(str)
         _bars_cache.update(ts=now, df=df)
         return df
