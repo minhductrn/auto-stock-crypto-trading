@@ -41,6 +41,13 @@ export default function App() {
       <div className="grid">
         <section className="panel">
           <h2>Signals</h2>
+          {dashboard.blockedMlEntries?.map((entry) => (
+            <p key={entry.symbol ?? "market-data"}>
+              {entry.symbol && `${entry.symbol} · `}<strong>NO TRADE</strong> · {entry.reason}
+              {entry.pXgb != null && ` · XGBoost ${entry.pXgb.toFixed(3)}`}
+              {entry.pLgbm != null && ` · LightGBM ${entry.pLgbm.toFixed(3)}`}
+            </p>
+          ))}
           <SignalsTable
             signals={dashboard.signals}
             threshold={dashboard.risk.pThreshold}

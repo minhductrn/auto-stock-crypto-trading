@@ -29,6 +29,13 @@ export interface RiskLimits {
   costBpsPerSide: number;
 }
 
+export interface BlockedMlEntry {
+  symbol?: string;
+  reason: string;
+  pXgb?: number | null;
+  pLgbm?: number | null;
+}
+
 export interface Dashboard {
   symbols: string[];
   signals: Signal[];
@@ -36,6 +43,7 @@ export interface Dashboard {
   /** Optional extras supplied by the live API (absent in mock mode). */
   accountEquity?: number | null;
   modelStatus?: string;
+  blockedMlEntries?: BlockedMlEntry[];
   asOf?: string | null;
 }
 

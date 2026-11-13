@@ -15,6 +15,7 @@ JSON shapes mirror ``frontend/src/types/index.ts`` 1-to-1 (camelCase keys):
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 import os
@@ -40,14 +41,18 @@ from pydantic import BaseModel, Field  # noqa: E402
 from data_pipeline.errors import (  # noqa: E402
     DataContractError,
     RiskLimitError,
-    SchemaContractError,
     SdfTradeError,
 )
 from data_pipeline.storage import read_bars  # noqa: E402
 from risk_management.config import DEFAULT_RISK_CONFIG, RiskConfig  # noqa: E402
 from risk_management.exits import compute_exit_levels  # noqa: E402
 from risk_management.liquidity import compute_tradable  # noqa: E402
-from strategies.features import FEATURE_COLUMNS, build_features  # noqa: E402
+from strategies.features import (  # noqa: E402
+    FEATURE_COLUMNS,
+    FEATURE_SET_VERSION,
+    build_features,
+    feature_hash,
+)
 from strategies.models import LGBMStageModel, XGBStageModel, ensemble_proba  # noqa: E402
 from strategies.signals import generate_signals  # noqa: E402
 
@@ -120,58 +125,46 @@ def _finite(x: Any) -> float | None:
 
 # --------------------------------------------------------------------------- models / signals
 
-_models_cache: dict[str, Any] = {}
-
-
 def load_models() -> tuple[dict[str, Any], list[str]]:
-    """Load XGB/LGBM from ``MODEL_DIR``; each model independently falls back to missing."""
-    notes: list[str] = []
-    for name, cls, fname in (
-        ("xgb", XGBStageModel, "xgb.ubj"),
-        ("lgbm", LGBMStageModel, "lgbm.txt"),
+    """Validate the feature contract before loading artifacts from the selected run."""
+    try:
+        manifest = json.loads((MODEL_DIR / "manifest.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}, ["Model manifest is missing or unreadable."]
+    if not isinstance(manifest, dict) or (
+        manifest.get("fs_version") != FEATURE_SET_VERSION
+        or manifest.get("feature_names") != list(FEATURE_COLUMNS)
+        or manifest.get("feature_hash_sha256") != feature_hash()
     ):
-        if name in _models_cache:
-            continue
-        if not (MODEL_DIR / fname).exists():
-            notes.append(f"{name}: {MODEL_DIR / fname} not found")
-            continue
+        return {}, ["Model manifest is incompatible with the inference feature contract."]
+
+    models: dict[str, Any] = {}
+    notes: list[str] = []
+    for name, cls in (("xgb", XGBStageModel), ("lgbm", LGBMStageModel)):
         try:
-            _models_cache[name] = cls.load(str(MODEL_DIR))
-        except Exception as exc:  # noqa: BLE001 - corrupt artifact must not take the API down
-            logger.warning("failed to load %s model: %s", name, exc)
-            notes.append(f"{name}: load failed ({type(exc).__name__}: {exc})")
-    return dict(_models_cache), notes
+            models[name] = cls.load(str(MODEL_DIR))
+        except Exception as exc:
+            logger.warning("Failed to load %s model: %s", name, exc)
+            notes.append(f"{name}: model artifact unavailable.")
+    return models, notes
 
 
-def _heuristic_proba(feats: pd.DataFrame) -> pd.Series:
-    """Placeholder score used ONLY when no trained model is available.
-
-    Vol-scaled 20d momentum squashed into (0.4, 0.6). Not a trained model; the dashboard
-    reports ``modelStatus = "heuristic-fallback"`` so the UI/operator can see it.
-    """
-    z = feats["ret_20"].astype(float) / (feats["rv_20"].astype(float) * math.sqrt(20) + 1e-9)
-    return pd.Series(0.5 + 0.1 * np.tanh(z.to_numpy()), index=feats.index)
-
-
-def _score(feats: pd.DataFrame) -> tuple[pd.Series, pd.Series, pd.Series, str]:
-    """Return (p_xgb, p_lgbm, p_long, model_status) for the latest feature rows."""
+def _score(feats: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
+    """Keep each model's valid probabilities aligned with the input rows."""
     models, notes = load_models()
     X = feats[list(FEATURE_COLUMNS)]
-    probs: dict[str, pd.Series] = {}
+    scores = pd.DataFrame(np.nan, index=X.index, columns=["xgb", "lgbm"])
     for name, model in models.items():
         try:
-            probs[name] = model.predict_proba(X)
-        except Exception as exc:  # noqa: BLE001
+            prediction = model.predict_proba(X)
+            if not isinstance(prediction, pd.Series) or not prediction.index.equals(X.index):
+                raise ValueError("Prediction index does not match the input")
+            numeric = pd.to_numeric(prediction, errors="coerce")
+            scores[name] = numeric.where(numeric.between(0.0, 1.0))
+        except Exception as exc:
             logger.warning("%s inference failed: %s", name, exc)
-            notes.append(f"{name}: inference failed ({type(exc).__name__})")
-    if not probs:
-        p = _heuristic_proba(feats)
-        return p, p, p.rename("p_long"), "heuristic-fallback"
-    p_x = probs.get("xgb", probs.get("lgbm"))
-    p_l = probs.get("lgbm", probs.get("xgb"))
-    assert p_x is not None and p_l is not None
-    status = "xgb+lgbm" if len(probs) == 2 else f"{next(iter(probs))}-only"
-    return p_x, p_l, ensemble_proba({"xgb": p_x, "lgbm": p_l}), status
+            notes.append(f"{name}: inference failed.")
+    return scores, notes
 
 
 def _risk_limits(cfg: RiskConfig) -> dict[str, float | int]:
@@ -187,39 +180,56 @@ def _risk_limits(cfg: RiskConfig) -> dict[str, float | int]:
     }
 
 
-def build_signals(bars: pd.DataFrame, cfg: RiskConfig = DEFAULT_RISK_CONFIG) -> tuple[list[dict], str, str | None]:
-    """Features -> model probabilities -> generate_signals() for the latest session."""
+def build_signals(
+    bars: pd.DataFrame, cfg: RiskConfig = DEFAULT_RISK_CONFIG,
+) -> tuple[list[dict], str, str | None, list[dict]]:
+    """Rank symbols with two valid model scores and report blocked entries separately."""
+    if bars.empty:
+        return [], "data-unavailable", None, [{"reason": "No market data is available."}]
+
     work = bars.sort_values(["symbol", "session_date"]).reset_index(drop=True)
+    latest_date = work["session_date"].max()
+    if pd.isna(latest_date):
+        return [], "data-unavailable", None, [{"reason": "No market session date is available."}]
+    as_of = pd.Timestamp(latest_date).strftime("%Y-%m-%d")
     feats = build_features(work)
     tradable = compute_tradable(work, cfg)[["symbol", "session_date", "tradable"]]
-    latest_date = work["session_date"].max()
+    symbols = work[["symbol"]].drop_duplicates()
+    latest = symbols.merge(feats[feats["session_date"] == latest_date], on="symbol", how="left")
+    latest = latest.merge(tradable, on=["symbol", "session_date"], how="left")
+    latest["tradable"] = latest["tradable"].eq(True)
 
-    latest = feats[feats["session_date"] == latest_date].merge(
-        tradable, on=["symbol", "session_date"], how="left"
-    )
-    latest["tradable"] = latest["tradable"].fillna(False).astype(bool)
     finite = np.isfinite(latest[list(FEATURE_COLUMNS)].to_numpy(dtype=float)).all(axis=1)
-    latest = latest[finite & (latest["atr14_pct"] > 0)].reset_index(drop=True)
-    as_of = pd.Timestamp(latest_date).strftime("%Y-%m-%d")
-    if latest.empty:
-        return [], "no-eligible-rows", as_of
+    ready = finite & (latest["atr14_pct"] > 0)
+    blocked = [
+        {"symbol": symbol, "reason": "Insufficient feature data for the latest session."}
+        for symbol in latest.loc[~ready, "symbol"]
+    ]
+    if not ready.any():
+        return [], "no-eligible-rows", as_of, blocked
 
-    p_x, p_l, p_long, status = _score(latest)
-    probs = pd.DataFrame(
-        {
-            "session_date": latest["session_date"].to_numpy(),
-            "symbol": latest["symbol"].to_numpy(),
-            "p_xgb": p_x.to_numpy(),
-            "p_lgbm": p_l.to_numpy(),
-            "p_long": p_long.to_numpy(),
-            "atr14_pct": latest["atr14_pct"].to_numpy(),
-            "tradable": latest["tradable"].to_numpy(),
-        }
-    )
-    try:
-        sig = generate_signals(probs, RUN_ID, cfg)
-    except SchemaContractError:
-        raise
+    candidates = latest.loc[ready].copy()
+    scores, notes = _score(candidates)
+    complete = scores.notna().all(axis=1)
+    for index, row in scores.loc[~complete].iterrows():
+        missing = ", ".join(row.index[row.isna()])
+        reason = " ".join(notes) if notes else f"Invalid prediction from {missing}."
+        blocked.append({
+            "symbol": candidates.at[index, "symbol"],
+            "reason": reason,
+            "pXgb": _finite(row["xgb"]),
+            "pLgbm": _finite(row["lgbm"]),
+        })
+
+    valid_scores = scores.loc[complete]
+    probs = candidates.loc[complete, ["session_date", "symbol", "atr14_pct", "tradable"]].copy()
+    probs["p_xgb"] = valid_scores["xgb"]
+    probs["p_lgbm"] = valid_scores["lgbm"]
+    probs["p_long"] = ensemble_proba({"xgb": probs["p_xgb"], "lgbm": probs["p_lgbm"]})
+    sig = generate_signals(probs, RUN_ID, cfg)
+    status = "model-unavailable"
+    if complete.any():
+        status = "xgb+lgbm" if complete.all() else "partial-predictions"
     out = [
         {
             "symbol": str(r.symbol),
@@ -231,7 +241,7 @@ def build_signals(bars: pd.DataFrame, cfg: RiskConfig = DEFAULT_RISK_CONFIG) -> 
         }
         for r in sig.sort_values("rank").itertuples(index=False)
     ]
-    return out, status, as_of
+    return out, status, as_of, blocked
 
 
 # --------------------------------------------------------------------------- Alpaca helpers
@@ -283,11 +293,16 @@ def health() -> dict[str, Any]:
 
 @app.get("/dashboard")
 def dashboard() -> dict[str, Any]:
-    bars = load_bars()
-    signals, model_status, as_of = build_signals(bars)
+    try:
+        bars = load_bars()
+    except DataContractError as exc:
+        logger.warning("Dashboard market data unavailable: %s", exc)
+        bars = pd.DataFrame(columns=["symbol"])
+    signals, model_status, as_of, blocked = build_signals(bars)
     return {
         "symbols": sorted(bars["symbol"].unique().tolist()),
         "signals": signals,
+        "blockedMlEntries": blocked,
         "risk": _risk_limits(DEFAULT_RISK_CONFIG),
         # optional extras (see frontend Dashboard type)
         "accountEquity": _account_equity(),
